@@ -183,6 +183,7 @@ XUD_Result_t rtos_usb_endpoint_transfer_start(rtos_usb_t *ctx,
 XUD_BusSpeed_t rtos_usb_endpoint_reset(rtos_usb_t *ctx,
                                        uint32_t endpoint_addr);
 
+extern void XUD_SetCrcTableAddr(unsigned addr);
 /**
  * Sets the USB device's bus address. This function must be called after a
  * ``setDeviceAddress`` request is made by the host, and after the ZLP status
@@ -195,7 +196,9 @@ static inline XUD_Result_t rtos_usb_device_address_set(rtos_usb_t *ctx,
                                                        uint32_t addr)
 {
     (void) ctx;
-    return XUD_SetDevAddr(addr);
+    XUD_SetCrcTableAddr(addr);
+    // return XUD_SetDevAddr(addr);
+    return XUD_RES_OKAY;
 }
 
 /**
