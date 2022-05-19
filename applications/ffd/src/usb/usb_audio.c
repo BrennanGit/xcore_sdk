@@ -745,6 +745,15 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport,
     return true;
 }
 
+void video_task(void);
+
+static void video_task_wrapper(void *arg) {
+    while(1) {
+        video_task();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void usb_audio_init(rtos_intertile_t *intertile_ctx,
                     unsigned priority)
 {
@@ -774,4 +783,133 @@ void usb_audio_init(rtos_intertile_t *intertile_ctx,
 
     xTaskCreate((TaskFunction_t) usb_audio_in_task, "usb_audio_in_task", portTASK_STACK_DEPTH(usb_audio_in_task), intertile_ctx, priority, NULL);
     xTaskCreate((TaskFunction_t) usb_audio_out_task, "usb_audio_out_task", portTASK_STACK_DEPTH(usb_audio_out_task), intertile_ctx, priority, &usb_audio_out_task_handle);
+
+
+    xTaskCreate((TaskFunction_t) video_task_wrapper,
+    "video_task",
+    portTASK_STACK_DEPTH(video_task_wrapper),
+    NULL,
+    priority,
+    NULL);
+}
+
+
+
+//--------------------------------------------------------------------+
+// USB Video
+//--------------------------------------------------------------------+
+static unsigned frame_num = 0;
+static volatile unsigned tx_busy = 0;
+static unsigned interval_ms = 1000 / FRAME_RATE;
+
+/* YUY2 frame buffer */
+// #include "images.h"
+static uint8_t frame_buffer[FRAME_WIDTH * FRAME_HEIGHT * 16 / 8] = {0};
+
+// YUYV format
+const uint8_t yuy2_wht[4] = { 235, 128, 235, 128};
+const uint8_t yuy2_blk[4] = {  16, 128,  16, 128};
+const uint8_t yuy2_grn[4] = { 173,  42, 173,  26};
+const uint8_t yuy2_red[4] = {  63, 102,  63, 240};
+
+void video_class_green()
+{
+    uint8_t *p;
+
+    /* Generate the 1st line */
+    uint8_t *end = &frame_buffer[FRAME_WIDTH * 2];
+    unsigned idx = (FRAME_WIDTH / 2 - 1) - (0 % (FRAME_WIDTH / 2));
+    p = &frame_buffer[idx * 4];
+    for (unsigned i = 0; i < 8; ++i) {
+      for (int j = 0; j < FRAME_WIDTH / (2 * 8); ++j) {
+        memcpy(p, yuy2_grn, 4);
+        p += 4;
+        if (end <= p) {
+          p = frame_buffer;
+        }
+      }
+    }
+    /* Duplicate the 1st line to the others */
+    p = &frame_buffer[FRAME_WIDTH * 2];
+    for (unsigned i = 1; i < FRAME_HEIGHT; ++i) {
+      memcpy(p, frame_buffer, FRAME_WIDTH * 2);
+      p += FRAME_WIDTH * 2;
+    }
+}
+
+void video_class_red()
+{
+    uint8_t *p;
+
+    /* Generate the 1st line */
+    uint8_t *end = &frame_buffer[FRAME_WIDTH * 2];
+    unsigned idx = (FRAME_WIDTH / 2 - 1) - (0 % (FRAME_WIDTH / 2));
+    p = &frame_buffer[idx * 4];
+    for (unsigned i = 0; i < 8; ++i) {
+      for (int j = 0; j < FRAME_WIDTH / (2 * 8); ++j) {
+        memcpy(p, yuy2_red, 4);
+        p += 4;
+        if (end <= p) {
+          p = frame_buffer;
+        }
+      }
+    }
+    /* Duplicate the 1st line to the others */
+    p = &frame_buffer[FRAME_WIDTH * 2];
+    for (unsigned i = 1; i < FRAME_HEIGHT; ++i) {
+      memcpy(p, frame_buffer, FRAME_WIDTH * 2);
+      p += FRAME_WIDTH * 2;
+    }
+}
+// void video_class_write(uint8_t *bitmap)
+// {
+//     // rtos_printf("Image copy\n");
+//     // for(int y=0; y<FRAME_HEIGHT; y++) {
+//     //     for(int x=0; x<FRAME_WIDTH; x++) {
+//     //         uint8_t tmpchar = *(bitmap + (FRAME_WIDTH * y) + x);
+//     //         for(int ndx=7; ndx>=0; ndx--) {
+//     //             if((tmpchar>>ndx) & 0x01) {
+//     //                 memcpy((frame_buffer + (FRAME_WIDTH * y) + x), yuy2_blk, 4);
+//     //             } else {
+//     //                 memcpy((frame_buffer + (FRAME_WIDTH * y) + x), yuy2_wht, 4);
+//     //             }
+//     //         }
+//     //     }
+//     // }
+//     // rtos_printf("Image copied\n");
+// }
+
+void video_task(void)
+{
+  if (!tud_video_n_streaming(0, 0)) {
+    frame_num     = 0;
+    return;
+  }
+
+    tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t) &frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                           FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+
+  // TODO replace with a semaphore to replace busy wait
+  do {
+  } while(tx_busy != 0);
+
+  tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t) &frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                         FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+}
+
+void tud_video_frame_xfer_complete_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx)
+{
+  (void)ctl_idx; (void)stm_idx;
+  tx_busy = 0;
+  /* flip buffer */
+  // ++frame_num;
+}
+
+int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
+			video_probe_and_commit_control_t const *parameters)
+{
+  (void)ctl_idx; (void)stm_idx;
+  /* convert unit to ms from 100 ns */
+  interval_ms = parameters->dwFrameInterval / 10000;
+  return VIDEO_ERROR_NONE;
 }

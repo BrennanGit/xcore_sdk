@@ -100,6 +100,9 @@ size_t ssd1306_I2C_write(void* app_ctx, void* bus, int address, uint8_t *buf, si
     return num_bytes_sent;
 }
 
+extern void video_class_green();
+extern void video_class_red();
+
 void inference_hmi_task(void *args)
 {
     EventGroupHandle_t egrp_intent = (EventGroupHandle_t) args;
@@ -213,6 +216,7 @@ void inference_hmi_task(void *args)
                     case (INFERENCE_BIT_GREEN | INFERENCE_BIT_DISPLAY):
                         green_led_on();
                         rtos_printf("Intent is GREEN ON\n");
+                        video_class_green();
                         ssd1306_128x32_ascii_to_bitmap("Green On", (char *)display_buf);
                         intent = 0;
                         break;
@@ -225,6 +229,7 @@ void inference_hmi_task(void *args)
                     case (INFERENCE_BIT_RED | INFERENCE_BIT_DISPLAY):
                         red_led_on();
                         rtos_printf("Intent is RED ON\n");
+                        video_class_red();
                         ssd1306_128x32_ascii_to_bitmap("Red On", (char *)display_buf);
                         intent = 0;
                         break;

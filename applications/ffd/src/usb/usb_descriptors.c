@@ -41,9 +41,9 @@ tusb_desc_device_t const desc_device = {
     .bDescriptorType    = TUSB_DESC_DEVICE,
     .bcdUSB             = 0x0200,
 
-    .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-    .bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
-    .bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
+    .bDeviceClass       = TUSB_CLASS_MISC,
+    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
     .idVendor           = XMOS_VID,
@@ -115,11 +115,13 @@ const uint16_t tud_audio_desc_lengths[CFG_TUD_AUDIO] = {
         uac2_total_descriptors_length
 };
 
-#define CONFIG_TOTAL_LEN        (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * uac2_total_descriptors_length)
-#define EPNUM_AUDIO   0x01
+#define CONFIG_TOTAL_LEN        (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * uac2_total_descriptors_length + TUD_VIDEO_CAPTURE_DESC_LEN)
+#define EPNUM_AUDIO     0x02    // Note this is used for in and out, OR'd with 0x80 for in ep
+#define EPNUM_VIDEO_IN  0x81
 
 
 #define AUDIO_INTERFACE_STRING_INDEX 4
+#define VIDEO_INTERFACE_STRING_INDEX 5
 
 uint8_t const desc_configuration[] = {
     // Interface count, string index, total length, attribute, power in mA
@@ -195,6 +197,48 @@ uint8_t const desc_configuration[] = {
     /* Class-Specific AS Isochronous Audio Data Endpoint Descriptor(4.10.1.2) */
     TUD_AUDIO_DESC_CS_AS_ISO_EP(/*_attr*/ AUDIO_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK, /*_ctrl*/ AUDIO_CTRL_NONE, /*_lockdelayunit*/ AUDIO_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC, /*_lockdelay*/ 0x0003),
 #endif
+
+// /* Standard Interface Association Descriptor (IAD) */
+// TUD_AUDIO_DESC_IAD(/*_firstitfs*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ 1+AUDIO_OUTPUT_ENABLED+AUDIO_INPUT_ENABLED, /*_stridx*/ 0x00),
+// /* Standard AC Interface Descriptor(4.7.1) */
+// TUD_AUDIO_DESC_STD_AC(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_nEPs*/ 0x00, /*_stridx*/ AUDIO_INTERFACE_STRING_INDEX),
+// /* Class-Specific AC Interface Header Descriptor(4.7.2) */
+// TUD_AUDIO_DESC_CS_AC(/*_bcdADC*/ 0x0200, /*_category*/ AUDIO_FUNC_OTHER, /*_totallen*/ uac2_interface_descriptors_length, /*_ctrl*/ AUDIO_CS_AS_INTERFACE_CTRL_LATENCY_POS),
+// /* Clock Source Descriptor(4.7.2.1) */
+// TUD_AUDIO_DESC_CLK_SRC(/*_clkid*/ UAC2_ENTITY_CLOCK, /*_attr*/ AUDIO_CLOCK_SOURCE_ATT_INT_PRO_CLK, /*_ctrl*/ (AUDIO_CTRL_R << AUDIO_CLOCK_SOURCE_CTRL_CLK_VAL_POS) | (AUDIO_CTRL_R << AUDIO_CLOCK_SOURCE_CTRL_CLK_FRQ_POS), /*_assocTerm*/ 0x00,  /*_stridx*/ 0x00),
+
+
+// IAD for Video Control
+TUD_VIDEO_DESC_IAD(/*_firstitfs*/ ITF_NUM_VIDEO_CONTROL, /*_nitfs*/ 2, /*_stridx*/ VIDEO_INTERFACE_STRING_INDEX),
+
+/* Video control 0 */
+TUD_VIDEO_DESC_STD_VC(ITF_NUM_VIDEO_CONTROL, 0, VIDEO_INTERFACE_STRING_INDEX),
+TUD_VIDEO_DESC_CS_VC( /* UVC 1.5*/ 0x0150, /* wTotalLength - bLength */ TUD_VIDEO_DESC_CAMERA_TERM_LEN + TUD_VIDEO_DESC_OUTPUT_TERM_LEN, UVC_CLOCK_FREQUENCY, ITF_NUM_VIDEO_STREAMING),
+  TUD_VIDEO_DESC_CAMERA_TERM(UVC_ENTITY_CAP_INPUT_TERMINAL, 0, 0,
+                             /*wObjectiveFocalLengthMin*/0, /*wObjectiveFocalLengthMax*/0,
+                             /*wObjectiveFocalLength*/0, /*bmControls*/0),
+  TUD_VIDEO_DESC_OUTPUT_TERM(UVC_ENTITY_CAP_OUTPUT_TERMINAL, VIDEO_TT_STREAMING, 0, 1, 0),
+/* Video stream alt. 0 */
+    TUD_VIDEO_DESC_STD_VS(ITF_NUM_VIDEO_STREAMING, 0, 0, 0),
+    /* Video stream header for without still image capture */
+    TUD_VIDEO_DESC_CS_VS_INPUT( /*bNumFormats*/1, /*wTotalLength - bLength */ TUD_VIDEO_DESC_CS_VS_FMT_UNCOMPR_LEN + TUD_VIDEO_DESC_CS_VS_FRM_UNCOMPR_CONT_LEN + TUD_VIDEO_DESC_CS_VS_COLOR_MATCHING_LEN,
+        EPNUM_VIDEO_IN, /*bmInfo*/0, /*bTerminalLink*/UVC_ENTITY_CAP_OUTPUT_TERMINAL, /*bStillCaptureMethod*/0, /*bTriggerSupport*/0, /*bTriggerUsage*/0, /*bmaControls(1)*/0),
+    /* Video stream format */
+    TUD_VIDEO_DESC_CS_VS_FMT_YUY2(/*bFormatIndex*/1, /*bNumFrameDescriptors*/1, /*bDefaultFrameIndex*/1, 0, 0, 0, /*bCopyProtect*/0),
+    /* Video stream frame format */
+    TUD_VIDEO_DESC_CS_VS_FRM_UNCOMPR_CONT(/*bFrameIndex */1, 0, FRAME_WIDTH, FRAME_HEIGHT,
+        FRAME_WIDTH * FRAME_HEIGHT * 16, FRAME_WIDTH * FRAME_HEIGHT * 16 * FRAME_RATE,
+        FRAME_WIDTH * FRAME_HEIGHT * 16,
+        (10000000/FRAME_RATE), (10000000/FRAME_RATE), (10000000/FRAME_RATE)*FRAME_RATE, (10000000/FRAME_RATE)),
+    TUD_VIDEO_DESC_CS_VS_COLOR_MATCHING(VIDEO_COLOR_PRIMARIES_BT709, VIDEO_COLOR_XFER_CH_BT709, VIDEO_COLOR_COEF_SMPTE170M),
+    /* VS alt 1 */
+    TUD_VIDEO_DESC_STD_VS(ITF_NUM_VIDEO_STREAMING, 1, 1, 0),
+  /* EP */
+  TUD_VIDEO_DESC_EP_ISO(EPNUM_VIDEO_IN, CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE, 1)
+// TUD_VIDEO_CAPTURE_DESCRIPTOR(VIDEO_INTERFACE_STRING_INDEX, EPNUM_VIDEO_IN,
+//                              FRAME_WIDTH, FRAME_HEIGHT, FRAME_RATE,
+//                              CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE)
+
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -216,6 +260,7 @@ char const *string_desc_arr[] = {(const char[]) {0x09, 0x04}, // 0: is supported
         AVONA_PRODUCT_STR,          // 2: Product
         "123456",                   // 3: Serials, should use chip ID
         AVONA_PRODUCT_STR,          // 4: Audio Interface
+        "UVC",                      // 5: UVC Interface
         };
 
 static uint16_t _desc_str[32];

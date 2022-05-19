@@ -66,6 +66,17 @@
 #define CFG_TUD_MIDI              0
 #define CFG_TUD_AUDIO             1
 #define CFG_TUD_VENDOR            0
+#define CFG_TUD_VIDEO            1
+
+
+//--------------------------------------------------------------------
+// Video CLASS DRIVER CONFIGURATION
+//--------------------------------------------------------------------
+// The number of video streaming interfaces
+#define CFG_TUD_VIDEO_STREAMING  1
+
+// video streaming endpoint size
+#define CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE  256
 
 //--------------------------------------------------------------------
 // AUDIO CLASS DRIVER CONFIGURATION
